@@ -1,0 +1,140 @@
+Project1 Reproducible Research
+=============================
+**Load the data:**
+```{r dataload}
+        working.dir <- "/Users/camilla/Projects/ReproducibleResearch/RawData/activity.csv"
+        data <- read.csv(file = working.dir)
+```
+
+**What is the mean total number of steps taken per day?**
+```{r hist_total, warning= FALSE, echo=FALSE}
+        #Remove all rows containing NAs
+        complete.data <- data[complete.cases(data),]
+        #Calculate total number of steps per day
+        library(plyr)
+        sumspd <- ddply(complete.data,~date,summarise,total.steps=sum(steps))
+        #Graph a distribution of Total Steps per day (as a histogram)
+        #install.packages("ggplot2")
+        library(ggplot2)
+        ggplot(sumspd,aes(total.steps))+
+                geom_histogram(binwidth = 1000, fill = "grey", color = "black")+
+                labs(title = "Distribution of Total Steps per Day (binwidth = 1000)", 
+                     x = "Total Steps per Day", y = "Count")+
+                theme_grey(base_size = 14)
+```
+```{r meanspd, results= "asis", echo=FALSE}
+        meansumspd <- round(mean(sumspd$total.steps), digits = 0)
+        medsumspd <- median(sumspd$total.steps)
+```
+The mean total number of steps per day is `r meansumspd` and the median total steps per day is `r medsumspd`.
+
+**What is the average daily activity pattern?**
+```{r meaninterval, echo=FALSE}
+        #average by interval
+        avgspi<- ddply(complete.data, ~interval, summarise, avg.steps = mean(steps))
+        #graph interval numbers by average steps per day
+        ggplot(avgspi,aes(x=interval, y=avg.steps))+
+                geom_line()+
+                labs(title = "The Maximum Average Steps per Day \nOccurs at Interval Number 835", 
+                     x = "Interval Number", y = "Average Steps per Day")+
+                theme_grey(base_size = 12)
+        #Find which interval corresponds to the maximum steps
+        max.interval <- avgspi[avgspi$avg.steps==max(avgspi$avg.steps),]
+        max <- max.interval$interval
+```
+
+Interval `r max` contains the maximum number of steps.
+
+**Inputing missing values**
+```{r missing, echo=FALSE}
+        
+        #Calculate NAs in dataset
+        NAsteps <- sum(is.na(data$steps))
+        NAdate <- sum(is.na(data$date))
+        NAinterval <- sum(is.na(data$interval))
+        
+        sumNAs <-sum(NAsteps,NAdate,NAinterval)
+```
+
+The number of missing values in this dataset are `r sumNAs`. Missing values were replaced with the average numbers of steps for that interval. The average daily value was not used since data for one day was completely missing, therefore no average was available. A new dataset with incomplete data was created and then merged with the average steps per interval using interval idenfifiers. The filled dataset was then added to the complete dataset. See code below.
+
+```{r fill}
+        #replace missing values
+        #create new dataset with only missing values
+        data.incomplete <- data[!complete.cases(data),]
+        #nrow(data.incomplete) #should be 2304
+        #merge missing values dataset with average steps per interval by interval num
+        data.fill <- merge(data.incomplete,avgspi, by="interval")[-2]
+        #rearrange and rename columns to match complete dataset
+        data.fill <- data.fill[,c(3,2,1)]
+        colnames(data.fill) <- c("steps","date","interval")
+        #append filled in data to complete data
+        all.data <- rbind(complete.data,data.fill)
+```
+
+**What is the mean total number of steps taken per day with added values?**
+```{r hist_total_fill, warning= FALSE, echo=FALSE}
+
+        library(plyr)
+        sumspdfill <- ddply(all.data,~date,summarise,total.steps=sum(steps))
+        #Graph a distribution of Total Steps per day (as a histogram)
+        #install.packages("ggplot2")
+        library(ggplot2)
+        ggplot(sumspdfill,aes(total.steps))+
+                geom_histogram(binwidth = 1000, fill = "grey", color = "black")+
+                labs(title = "Distribution of Total Steps per Day with Added Values (binwidth = 1000)", 
+                     x = "Total Steps per Day", y = "Count")+
+                theme_grey(base_size = 12)
+```
+```{r meanspdfill, results= "asis", echo=FALSE}
+        meansumspdfill <- round(mean(sumspdfill$total.steps), digits = 0)
+        medsumspdfill <- round(median(sumspdfill$total.steps), digits = 0)
+```
+The mean total number of steps per day is `r meansumspdfill` and the median total steps per day is `r medsumspdfill`.
+
+The mean and median values of average steps per day are not largely affected by missing data. The mean steps per day did not change at `r meansumspd` steps. The median steps per day changed from `r medsumspd` steps to `r medsumspdfill` steps. 
+
+**Are there differences in activity patterns between weekdays and weekends?**
+```{r weekdaylabels, echo=FALSE, warning=FALSE, message=FALSE}
+        #average by interval with filled data
+        #change date from class factor to date
+        #install.packages("lubridate")
+        library(lubridate)
+        all.data$date <- ymd(as.character(all.data$date))
+        all.data$day <- weekdays(all.data$date)
+        #label Saturday and Sunday as "Weekend" else label "Weekday"
+        weeker=function(day){
+                if(day=="Saturday" || day == "Sunday" ) i= 0
+                else i=1
+        }
+        all.data$day.status=factor(
+                mapply(weeker,all.data$day),
+                levels=0:1,
+                labels=c("Weekend", "Weekday")
+        )
+```
+        
+```{r meanintervalfill, echo=FALSE}
+        #calculate average steps per interval by weekend vs. weekday
+        #split all data into weekend and weekday
+        all.data.weekday <- all.data[all.data$day.status == "Weekday",]
+        all.data.weekend <- all.data[all.data$day.status == "Weekend",]
+        #calculate average steps per interval in each category
+        avgspi.weekday<- ddply(all.data.weekday, ~interval, summarise, avg.steps = mean(steps))
+        avgspi.weekday$day.status <- "Weekday"
+        avgspi.weekend<- ddply(all.data.weekend, ~interval, summarise, avg.steps = mean(steps))
+        avgspi.weekend$day.status <- "Weekend"
+        #combine dataset into one
+        avgspi.all <- rbind(avgspi.weekday,avgspi.weekend)
+        
+        #graph interval numbers by average steps per day with panels of weekend and weekday
+        
+        ggplot(avgspi.all,aes(x=interval, y=avg.steps))+
+                geom_line()+
+                labs(title = "Weekday Intervals have Higher Maximum\n Steps per Day than Weekend Intervals", 
+                     x = "Interval Number", y = "Average Steps per Day")+
+                theme_grey(base_size = 12)+
+                facet_wrap(~day.status)
+
+```
+
